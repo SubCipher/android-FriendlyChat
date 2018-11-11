@@ -114,14 +114,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
     private String mPhotoUrl;
     private static final String MESSAGE_URL = "http://friendlychat.firebase.google.com/message/";
 
-
     private SharedPreferences mSharedPreferences;
     private GoogleApiClient mGoogleApiClient;
 
-
-    private Button mSendButton;
     private RecyclerView mMessageRecyclerView;
     private LinearLayoutManager mLinearLayoutManager;
+
+    private Button mSendButton;
     private ProgressBar mProgressBar;
     private EditText mMessageEditText;
     private ImageView mAddMessageImageView;
@@ -166,9 +165,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
 
         // Initialize ProgressBar and RecyclerView.
         mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
+
         mMessageRecyclerView = (RecyclerView) findViewById(R.id.messageRecyclerView);
+
         mLinearLayoutManager = new LinearLayoutManager(this);
         mLinearLayoutManager.setStackFromEnd(true);
+
         mMessageRecyclerView.setLayoutManager(mLinearLayoutManager);
 
         //Firebase messages
@@ -183,6 +185,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 if (friendlyMessage != null) {
                     friendlyMessage.setId(dataSnapshot.getKey());
                 }
+                Log.i(TAG, "friendly message; "+ friendlyMessage);
                 return friendlyMessage;
             }
         };
@@ -202,18 +205,23 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 return new MessageViewHolder(inflater.inflate(R.layout.item_message, viewGroup, false));
             }
 
-
             @Override
             protected void onBindViewHolder(@NonNull final MessageViewHolder viewHolder, int position,
                                             @NonNull FriendlyMessage friendlyMessage) {
                 mProgressBar.setVisibility(ProgressBar.INVISIBLE);
 
                 if (friendlyMessage.getText() != null) {
-                    //get text and bind to messageTextView
+                        FirebaseAppIndex.getInstance()
+                                .update(getMessageIndexable(friendlyMessage));
+
+
+                    //get text and bind to messageTextView : 215 change from messenger
                     viewHolder.messageTextView.setText(friendlyMessage.getText());
                     //make messageTextView visible
                     viewHolder.messageTextView.setVisibility(TextView.VISIBLE);
                     viewHolder.messageImageView.setVisibility(ImageView.GONE);
+
+                    FirebaseUserActions.getInstance().end(getMessageViewAction(friendlyMessage));
 
                 } else if (friendlyMessage.getImageUrl() != null) {
 
@@ -227,7 +235,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
 
                                 if (task.isSuccessful()) {
                                     String downloadUrl = task.getResult().toString();
-                                    Glide.with(viewHolder.messengerImageView.getContext())
+                                    //updated from messengerImageView
+                                    Glide.with(viewHolder.messageImageView.getContext())
                                             .load(downloadUrl)
                                             .into(viewHolder.messageImageView);
                                 } else {
@@ -236,14 +245,14 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                             }
                         });
                     } else {
-                        Glide.with(viewHolder.messengerImageView.getContext())
+                        Glide.with(viewHolder.messageImageView.getContext())
                                 .load(friendlyMessage.getImageUrl())
                                 .into(viewHolder.messageImageView);
                     }
                     viewHolder.messageImageView.setVisibility(ImageView.VISIBLE);
                     viewHolder.messageTextView.setVisibility(TextView.GONE);
                 }
-                viewHolder.messageTextView.setText(friendlyMessage.getName());
+                viewHolder.messengerTextView.setText(friendlyMessage.getName());
                 if (friendlyMessage.getPhotoUrl() == null) {
                     viewHolder.messengerImageView.setImageDrawable(ContextCompat.getDrawable(MainActivity.this, R.drawable.ic_account_circle_black_36dp));
 
@@ -253,7 +262,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                             .into(viewHolder.messengerImageView);
                 }
             }
+
         };
+
+
 
 
         mFirebaseAdapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
@@ -364,9 +376,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
     private void putImageInstorage(StorageReference storageReference, Uri uri, final String key){
         storageReference.putFile(uri).addOnCompleteListener(MainActivity.this,
                 new OnCompleteListener<UploadTask.TaskSnapshot>() {
+
                     @Override
                     public void onComplete(@NonNull Task<UploadTask.TaskSnapshot> task) {
                         if (task.isSuccessful()){
+
                             FriendlyMessage friendlyMessage = new FriendlyMessage(null,mUsername,mPhotoUrl,
                                     task.getResult().getMetadata().getDownloadUrl().toString());
                             mFirebaseDatabaseReference.child(MESSAGES_CHILD).child(key).setValue(friendlyMessage);
@@ -376,6 +390,34 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                         }
                     }
                 });
+    }
+
+    private Indexable getMessageIndexable(FriendlyMessage friendlyMessage){
+
+        PersonBuilder sender = Indexables.personBuilder()
+                .setIsSelf(mUsername.equals(friendlyMessage.getName()))
+                .setName(friendlyMessage.getName())
+                .setUrl(MESSAGE_URL.concat(friendlyMessage.getId() + "/sender"));
+
+        PersonBuilder recipient = Indexables.personBuilder()
+                .setName(mUsername)
+                .setUrl(MESSAGE_URL.concat(friendlyMessage.getId() + "/recipient"));
+
+        Indexable messageToIndex = Indexables.messageBuilder()
+                .setName(friendlyMessage.getText())
+                .setUrl(MESSAGE_URL.concat(friendlyMessage.getId()))
+                .setSender(sender)
+                .setRecipient(recipient)
+                .build();
+        return messageToIndex;
+
+    }
+
+    private Action getMessageViewAction(FriendlyMessage friendlyMessage){
+        return new Action.Builder(Action.Builder.VIEW_ACTION)
+                .setObject(friendlyMessage.getName(),MESSAGE_URL.concat(friendlyMessage.getId()))
+                .setMetadata(new Action.Metadata.Builder().setUpload(false))
+                        .build();
     }
 
     @Override
