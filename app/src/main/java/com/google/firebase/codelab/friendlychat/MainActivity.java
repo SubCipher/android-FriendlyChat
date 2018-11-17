@@ -129,7 +129,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
     private FirebaseAuth mFirebaseAuth;
     private FirebaseUser mFirebaseUser;
 
-    //properties to sync Firebase msgs
+    //Firebase remote config
+    private FirebaseRemoteConfig mFirebaseRemoteConfig;
+
+
+    //Add new Firebase messages and listen for new child messages
     private DatabaseReference mFirebaseDatabaseReference;
     private FirebaseRecyclerAdapter<FriendlyMessage, MessageViewHolder> mFirebaseAdapter;
 
@@ -173,7 +177,20 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
 
         mMessageRecyclerView.setLayoutManager(mLinearLayoutManager);
 
-        //Firebase messages
+        mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
+        FirebaseRemoteConfigSettings firebaseRemoteConfigSettings =
+                new FirebaseRemoteConfigSettings.Builder()
+                        .setDeveloperModeEnabled(true)
+                        .build();
+        Map<String, Object> defaultConfigMap = new HashMap<>();
+        defaultConfigMap.put("friendly_msg_length", 15L);
+
+        mFirebaseRemoteConfig.setConfigSettings(firebaseRemoteConfigSettings);
+        mFirebaseRemoteConfig.setDefaults(defaultConfigMap);
+
+        fetchConfig();
+
+        //Firebase messages (New Child entries
         mFirebaseDatabaseReference = FirebaseDatabase.getInstance().getReference();
 
         SnapshotParser<FriendlyMessage> parser = new SnapshotParser<FriendlyMessage>() {
@@ -185,7 +202,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 if (friendlyMessage != null) {
                     friendlyMessage.setId(dataSnapshot.getKey());
                 }
-                Log.i(TAG, "friendly message; "+ friendlyMessage);
+                Log.i(TAG, "friendly message; " + friendlyMessage);
                 return friendlyMessage;
             }
         };
@@ -211,8 +228,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 mProgressBar.setVisibility(ProgressBar.INVISIBLE);
 
                 if (friendlyMessage.getText() != null) {
-                        FirebaseAppIndex.getInstance()
-                                .update(getMessageIndexable(friendlyMessage));
+                    FirebaseAppIndex.getInstance()
+                            .update(getMessageIndexable(friendlyMessage));
 
 
                     //get text and bind to messageTextView : 215 change from messenger
@@ -264,10 +281,6 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
             }
 
         };
-
-
-
-
         mFirebaseAdapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
             @Override
             public void onItemRangeInserted(int positionStart, int itemCount) {
@@ -289,11 +302,12 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
         mMessageEditText.setFilters(new InputFilter[]{
 
                 new InputFilter.LengthFilter(mSharedPreferences
-                                .getInt(CodelabPreferences.FRIENDLY_MSG_LENGTH, DEFAULT_MSG_LENGTH_LIMIT))
-                });
+                        .getInt(CodelabPreferences.FRIENDLY_MSG_LENGTH, DEFAULT_MSG_LENGTH_LIMIT))
+        });
         mMessageEditText.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) { }
+            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+            }
 
             @Override
             public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
@@ -304,14 +318,18 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                     mSendButton.setEnabled(false);
                 }
             }
+
             @Override
-            public void afterTextChanged(Editable editable) { }});
+            public void afterTextChanged(Editable editable) {
+            }
+        });
 
         mSendButton = (Button) findViewById(R.id.sendButton);
         mSendButton.setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View view) {
+
                 // Send messages to database onClick w/friendlyMessage object
                 FriendlyMessage friendlyMessage = new FriendlyMessage(mMessageEditText.getText().toString(),
                         mUsername, mPhotoUrl, null);
@@ -332,9 +350,52 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("image/*");
-                startActivityForResult(intent,REQUEST_IMAGE);
+                startActivityForResult(intent, REQUEST_IMAGE);
             }
         });
+    }
+
+    //Send invitation
+    private void sendInvitation() {
+        Log.i(TAG, "sendInvite invoked");
+        Intent intent = new AppInviteInvitation.IntentBuilder(getString(R.string.invitation_title))
+                .setMessage(getString(R.string.invitation_message))
+                .setDeepLink(Uri.parse("com.google.firebase.codelab.friendlychat"))
+                .setCallToActionText(getString(R.string.invitation_cta))
+                .build();
+        startActivityForResult(intent, REQUEST_INVITE);
+    }
+
+    public void fetchConfig() {
+        long cacheExpiration = 3600;
+        if (mFirebaseRemoteConfig.getInfo().getConfigSettings()
+                .isDeveloperModeEnabled()) {
+            cacheExpiration = 0;
+        }
+
+        mFirebaseRemoteConfig.fetch(cacheExpiration)
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void aVoid) {
+                        mFirebaseRemoteConfig.activateFetched();
+                        applyRetrievedLengthLimit();
+                    }
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        Log.w(TAG, "Error fetching config " + e.getMessage());
+                        applyRetrievedLengthLimit();
+                    }
+                });
+    }
+
+    private void applyRetrievedLengthLimit() {
+        Long friendly_msg_length = mFirebaseRemoteConfig.getLong("friendly_msg_length");
+        mMessageEditText.setFilters(new InputFilter[]{
+                new InputFilter.LengthFilter(friendly_msg_length.intValue())
+        });
+        Log.d(TAG, "FML is: " + friendly_msg_length);
     }
 
     //handle image selection and write message
@@ -346,6 +407,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
 
         if (requestCode == REQUEST_IMAGE) {
             if (resultCode == RESULT_OK) {
+
                 if (data != null) {
                     final Uri uri = data.getData();
                     Log.d(TAG, "Uri:" + uri.toString());
@@ -354,6 +416,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                     mFirebaseDatabaseReference.child(MESSAGES_CHILD).push().setValue(tempMessage, new DatabaseReference.CompletionListener() {
                         @Override
                         public void onComplete(DatabaseError databaseError, DatabaseReference databaseReference) {
+
                             if (databaseError == null) {
                                 String key = databaseReference.getKey();
                                 StorageReference storageReference = FirebaseStorage.getInstance()
@@ -367,22 +430,34 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                             }
                         }
                     });
-
                 }
+            }
+        } else if (requestCode == REQUEST_INVITE) {
+            if (resultCode == RESULT_OK) {
+                Bundle payload = new Bundle();
+                payload.putString(FirebaseAnalytics.Param.VALUE, "inv_sent");
+
+                String[] ids = AppInviteInvitation.getInvitationIds(resultCode, data);
+                Log.d(TAG, "Ever called Invitations sent " + ids.length);
+
+            } else {
+                Log.e(TAG, "Failed to send invitation. On ActivityResult " + resultCode);
             }
         }
     }
+
     //upload image and update message
-    private void putImageInstorage(StorageReference storageReference, Uri uri, final String key){
+    private void putImageInstorage(StorageReference storageReference, Uri uri, final String key) {
         storageReference.putFile(uri).addOnCompleteListener(MainActivity.this,
                 new OnCompleteListener<UploadTask.TaskSnapshot>() {
 
                     @Override
                     public void onComplete(@NonNull Task<UploadTask.TaskSnapshot> task) {
-                        if (task.isSuccessful()){
+                        if (task.isSuccessful()) {
 
-                            FriendlyMessage friendlyMessage = new FriendlyMessage(null,mUsername,mPhotoUrl,
-                                    task.getResult().getMetadata().getDownloadUrl().toString());
+                            FriendlyMessage friendlyMessage = new FriendlyMessage(null, mUsername, mPhotoUrl,
+                                    task.getResult().getStorage().getDownloadUrl().toString());
+
                             mFirebaseDatabaseReference.child(MESSAGES_CHILD).child(key).setValue(friendlyMessage);
 
                         } else {
@@ -392,7 +467,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 });
     }
 
-    private Indexable getMessageIndexable(FriendlyMessage friendlyMessage){
+    private Indexable getMessageIndexable(FriendlyMessage friendlyMessage) {
 
         PersonBuilder sender = Indexables.personBuilder()
                 .setIsSelf(mUsername.equals(friendlyMessage.getName()))
@@ -413,11 +488,11 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
 
     }
 
-    private Action getMessageViewAction(FriendlyMessage friendlyMessage){
+    private Action getMessageViewAction(FriendlyMessage friendlyMessage) {
         return new Action.Builder(Action.Builder.VIEW_ACTION)
-                .setObject(friendlyMessage.getName(),MESSAGE_URL.concat(friendlyMessage.getId()))
+                .setObject(friendlyMessage.getName(), MESSAGE_URL.concat(friendlyMessage.getId()))
                 .setMetadata(new Action.Metadata.Builder().setUpload(false))
-                        .build();
+                .build();
     }
 
     @Override
@@ -456,6 +531,13 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
     public boolean onOptionsItemSelected(MenuItem item) {
 
         switch (item.getItemId()) {
+            case R.id.invite_menu:
+                sendInvitation();
+                Log.i(TAG, "call sendInvite from menu");
+                return true;
+            case R.id.fresh_config_menu:
+                fetchConfig();
+                return true;
             case R.id.sign_out_menu:
                 mFirebaseAuth.signOut();
                 Auth.GoogleSignInApi.signOut(mGoogleApiClient);
@@ -472,7 +554,7 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
         // An unresolvable error has occurred and Google APIs (including Sign-In) will not
         // be available.
-        Log.d(TAG, "onConnectionFailed:" + connectionResult);
+        Log.d(TAG, "onConnectionFailed: >>" + connectionResult);
         Toast.makeText(this, "Google Play Services error.", Toast.LENGTH_SHORT).show();
     }
 }

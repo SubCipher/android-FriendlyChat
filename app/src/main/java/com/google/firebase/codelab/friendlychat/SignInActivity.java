@@ -96,6 +96,7 @@ public class SignInActivity extends AppCompatActivity implements
         super.onActivityResult(requestCode, resultCode, data);
 
         if(requestCode == RC_SIGN_IN){
+
             GoogleSignInResult result = Auth.GoogleSignInApi.getSignInResultFromIntent(data);
             if(result.isSuccess()){
                 GoogleSignInAccount account = result.getSignInAccount();
@@ -112,6 +113,7 @@ public class SignInActivity extends AppCompatActivity implements
         AuthCredential credential = GoogleAuthProvider.getCredential(acct.getIdToken(),null);
         mFirebaseAuth.signInWithCredential(credential).addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
 
+            //network Task
             @Override
             public void onComplete(@NonNull Task<AuthResult> task) {
 
@@ -137,6 +139,4 @@ public class SignInActivity extends AppCompatActivity implements
         Log.d(TAG, "onConnectionFailed:" + connectionResult);
         Toast.makeText(this, "Google Play Services error.", Toast.LENGTH_SHORT).show();
     }
-
-
 }
