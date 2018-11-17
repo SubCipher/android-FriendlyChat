@@ -433,12 +433,15 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.O
                 }
             }
         } else if (requestCode == REQUEST_INVITE) {
+            Log.i(TAG, "requestCode == REQUEST_INVITE");
+
             if (resultCode == RESULT_OK) {
+                Log.i(TAG, "resultCode == RESULT_OK ");
                 Bundle payload = new Bundle();
                 payload.putString(FirebaseAnalytics.Param.VALUE, "inv_sent");
 
                 String[] ids = AppInviteInvitation.getInvitationIds(resultCode, data);
-                Log.d(TAG, "Ever called Invitations sent " + ids.length);
+                Log.d(TAG, " called Invitations sent " + ids.length);
 
             } else {
                 Log.e(TAG, "Failed to send invitation. On ActivityResult " + resultCode);

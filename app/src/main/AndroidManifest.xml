@@ -3,7 +3,7 @@
     package="com.google.firebase.codelab.friendlychat">
     <meta-data
         android:name="com.crashlytics.ApiKey"
-        android:value="AIzaSyCd1bMc5PzApXiz9DbeigHemFONHF3PAuc" />
+        android:value=" " />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <application
